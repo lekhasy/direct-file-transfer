@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "pxdmrj9nop4=",
+  "success": true,
+  "projectFilePath": "/Users/syle/Documents/Github/direct-file-transfer/direct-file-transfer/direct-file-transfer.csproj",
+  "expectedPackageFiles": [
+    "/Users/syle/.nuget/packages/microsoft.aspnetcore.openapi/9.0.0/microsoft.aspnetcore.openapi.9.0.0.nupkg.sha512",
+    "/Users/syle/.nuget/packages/microsoft.openapi/1.6.17/microsoft.openapi.1.6.17.nupkg.sha512"
+  ],
+  "logs": []
+}

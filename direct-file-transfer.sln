@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "direct-file-transfer", "direct-file-transfer\direct-file-transfer.csproj", "{AE59060B-62D1-4C6C-B796-D7588F020578}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "direct-file-transfer-client", "direct-file-transfer-client\direct-file-transfer-client.csproj", "{27BDF68A-B6C1-4965-87AA-3518D46B5729}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AE59060B-62D1-4C6C-B796-D7588F020578}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AE59060B-62D1-4C6C-B796-D7588F020578}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AE59060B-62D1-4C6C-B796-D7588F020578}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AE59060B-62D1-4C6C-B796-D7588F020578}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

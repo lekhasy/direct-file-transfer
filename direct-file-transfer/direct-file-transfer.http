@@ -1,0 +1,6 @@
+@direct_file_transfer_HostAddress = http://localhost:5027
+
+GET {{direct_file_transfer_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
