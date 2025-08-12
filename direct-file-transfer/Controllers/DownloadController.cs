@@ -6,18 +6,30 @@ public class DownloadController : ControllerBase
 {
     private readonly FileHasher _fileHasher;
     private readonly ILogger<DownloadController> _logger;
+    private readonly string _fileDirectory;
+    private readonly FileIndexCache _fileIndexCache;
+    private readonly AppConfig _config;
 
-    public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger)
-    {
-        _fileHasher = fileHasher;
-        _logger = logger;
-    }
+        public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger, Microsoft.Extensions.Options.IOptions<AppConfig> configOptions, FileIndexCache fileIndexCache)
+        {
+            _fileHasher = fileHasher;
+            _logger = logger;
+            _config = configOptions.Value;
+            _fileDirectory = _config.FileDirectory ?? Directory.GetCurrentDirectory();
+            _fileIndexCache = fileIndexCache;
+        }
 
     [HttpGet]
     public IActionResult Download([FromQuery] string FileName, [FromQuery] int partnumber)
     {
         _logger.LogInformation("[DownloadController] /Download endpoint hit. FileName={FileName}, partnumber={partnumber}", FileName, partnumber);
-        var filePath = Path.Combine(Directory.GetCurrentDirectory(), FileName);
+        // Prevent directory traversal
+        if (FileName.Contains("..") || Path.IsPathRooted(FileName))
+        {
+            _logger.LogWarning("Directory traversal attempt detected: {FileName}", FileName);
+            return BadRequest("Invalid file name.");
+        }
+        var filePath = Path.Combine(_fileDirectory, FileName);
         if (!System.IO.File.Exists(filePath))
         {
             _logger.LogWarning("File not found: {FileName}", FileName);
@@ -60,7 +72,13 @@ public class DownloadController : ControllerBase
     public IActionResult GetFileMetadata([FromQuery] string FileName)
     {
         _logger.LogInformation("[DownloadController] /Download/metadata endpoint hit. FileName={FileName}", FileName);
-        var filePath = Path.Combine(Directory.GetCurrentDirectory(), FileName);
+        // Prevent directory traversal
+        if (FileName.Contains("..") || Path.IsPathRooted(FileName))
+        {
+            _logger.LogWarning("Directory traversal attempt detected: {FileName}", FileName);
+            return BadRequest("Invalid file name.");
+        }
+        var filePath = Path.Combine(_fileDirectory, FileName);
         if (!System.IO.File.Exists(filePath))
         {
             _logger.LogWarning("File not found: {FileName}", FileName);
@@ -89,5 +107,19 @@ public class DownloadController : ControllerBase
             PartHashes = hashTable,
             ChunkSize = 4 * 1024 * 1024 // 4MB
         });
+    }
+
+    [HttpGet("index")]
+    public IActionResult GetFileIndex()
+    {
+        _logger.LogInformation("[DownloadController] /Download/index endpoint hit.");
+        if (!Directory.Exists(_fileDirectory))
+        {
+            _logger.LogWarning("Configured file directory does not exist: {FileDirectory}", _fileDirectory);
+            return NotFound("Configured file directory does not exist.");
+        }
+
+        var result = _fileIndexCache.GetIndex();
+        return Ok(result);
     }
 }
