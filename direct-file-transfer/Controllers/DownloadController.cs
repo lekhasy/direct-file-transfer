@@ -7,16 +7,16 @@ public class DownloadController : ControllerBase
     private readonly FileHasher _fileHasher;
     private readonly ILogger<DownloadController> _logger;
     private readonly string _fileDirectory;
-    private readonly FileIndexCache _fileIndexCache;
+    //private readonly FileIndexCache _fileIndexCache;
     private readonly AppConfig _config;
 
-        public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger, Microsoft.Extensions.Options.IOptions<AppConfig> configOptions, FileIndexCache fileIndexCache)
+        public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger, Microsoft.Extensions.Options.IOptions<AppConfig> configOptions)
         {
             _fileHasher = fileHasher;
             _logger = logger;
             _config = configOptions.Value;
             _fileDirectory = _config.FileDirectory ?? Directory.GetCurrentDirectory();
-            _fileIndexCache = fileIndexCache;
+            //_fileIndexCache = fileIndexCache;
         }
 
     [HttpGet]
@@ -109,17 +109,17 @@ public class DownloadController : ControllerBase
         });
     }
 
-    [HttpGet("index")]
-    public IActionResult GetFileIndex()
-    {
-        _logger.LogInformation("[DownloadController] /Download/index endpoint hit.");
-        if (!Directory.Exists(_fileDirectory))
-        {
-            _logger.LogWarning("Configured file directory does not exist: {FileDirectory}", _fileDirectory);
-            return NotFound("Configured file directory does not exist.");
-        }
+    //[HttpGet("index")]
+    //public IActionResult GetFileIndex()
+    //{
+    //    _logger.LogInformation("[DownloadController] /Download/index endpoint hit.");
+    //    if (!Directory.Exists(_fileDirectory))
+    //    {
+    //        _logger.LogWarning("Configured file directory does not exist: {FileDirectory}", _fileDirectory);
+    //        return NotFound("Configured file directory does not exist.");
+    //    }
 
-        var result = _fileIndexCache.GetIndex();
-        return Ok(result);
-    }
+    //    var result = _fileIndexCache.GetIndex();
+    //    return Ok(result);
+    //}
 }

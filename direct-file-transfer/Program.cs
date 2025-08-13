@@ -29,8 +29,8 @@ if (string.IsNullOrWhiteSpace(appConfig.FileDirectory))
     throw new Exception("Missing required configuration value: FileDirectory");
 
 builder.Services.AddSingleton(appConfig);
-builder.Services.AddSingleton<WatchFolderProvider>();
-builder.Services.AddSingleton<FileIndexCache>();
+//builder.Services.AddSingleton<WatchFolderProvider>();
+//builder.Services.AddSingleton<FileIndexCache>();
 
 var app = builder.Build();
 
