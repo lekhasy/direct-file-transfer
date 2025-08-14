@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
+using direct_file_transfer.shared;
 
 public static class Downloader
 {
@@ -17,9 +18,9 @@ public static class Downloader
         public List<int> FailedParts { get; set; } = new List<int>();
     }
 
-    public static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
+    private static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
     {
-                using var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var metadataResp = await httpClient.GetAsync($"{serverUrl}/Download/metadata?FileName={Uri.EscapeDataString(fileName)}");
         if (!metadataResp.IsSuccessStatusCode)
         {
@@ -32,20 +33,32 @@ public static class Downloader
         return metadata;
     }
 
-    public static void CreateEmptyFile(string fileName, long fileSize)
+    public static async Task<ISourceBlock<DownloadProgress>> DownloadAllPartsAsync(string fileName, string savePath, int connections, string serverUrl)
     {
-        Console.WriteLine($"Creating empty file: {fileName} ({fileSize} bytes)");
-        using var fs = new FileStream(fileName, FileMode.Create, FileAccess.Write, FileShare.None);
-        fs.SetLength(fileSize);
-    }
+        var metadata = await Downloader.GetFileMetadataAsync(fileName, serverUrl);
+        if (metadata == null)
+        {
+            throw new Exception("Failed to get or parse metadata.");
+        }
+        Console.WriteLine($"Parsed metadata: {metadata.FileName}, {metadata.FileSize}, {metadata.PartCount}");
 
-    public static ISourceBlock<DownloadProgress> DownloadAllPartsAsync(string fileName, string savePath, FileMetadata metadata, int connections, string serverUrl)
-    {
-        var progressBlock = new BroadcastBlock<DownloadProgress>(p => p);
+        var progressBlock = new BufferBlock<DownloadProgress>();
         var errors = new List<int>();
-        int completed = 0;
         var progress = new DownloadProgress { TotalParts = metadata.PartCount };
         var httpClient = new HttpClient();
+
+        // Use FileStatusManager to check missing blocks
+        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savePath, metadata.ChunkSize);
+        var missingBlocks = fileStatusManager.GetMissingBlocks(metadata.PartHashes);
+
+        progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
+
+        progressBlock.Post(new DownloadProgress
+        {
+            TotalParts = progress.TotalParts,
+            CompletedParts = progress.CompletedParts,
+            FailedParts = [.. progress.FailedParts]
+        });
 
         var options = new ExecutionDataflowBlockOptions
         {
@@ -58,7 +71,18 @@ public static class Downloader
             int retries = 0;
             while (!success && retries < 3)
             {
-                success = await DownloadAndVerifyPartAsync(httpClient, fileName, savePath, metadata, partNum, serverUrl);
+                var partData = await DownloadPartAsync(httpClient, fileName, metadata, partNum, serverUrl);
+                if (partData != null)
+                {
+                    // Write block using FileStatusManager
+                    fileStatusManager.WriteBlock(partNum, partData);
+                    // Verify hash
+                    var hash = FileTransferDataHasher.GetBlockHash(partData);
+                    if (hash == metadata.PartHashes[partNum])
+                    {
+                        success = true;
+                    }
+                }
                 if (!success)
                 {
                     Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
@@ -69,31 +93,32 @@ public static class Downloader
             {
                 if (success)
                 {
-                    completed++;
-                    progress.CompletedParts = completed;
+                    progress.CompletedParts++;
                 }
                 else
                 {
                     errors.Add(partNum);
                     progress.FailedParts.Add(partNum);
                 }
+
                 progressBlock.Post(new DownloadProgress
                 {
                     TotalParts = progress.TotalParts,
                     CompletedParts = progress.CompletedParts,
-                    FailedParts = new List<int>(progress.FailedParts)
+                    FailedParts = [.. progress.FailedParts]
                 });
             }
         }, options);
 
-        for (int i = 0; i < metadata.PartCount; i++)
+        foreach (var partNum in missingBlocks)
         {
-            actionBlock.Post(i);
+            actionBlock.Post(partNum);
         }
 
-        Task.Run(async () =>
-        {
-            actionBlock.Complete();
+        actionBlock.Complete();
+
+        // Complete progressBlock after all downloads are done
+        _ = Task.Run(async () => {
             await actionBlock.Completion;
             progressBlock.Complete();
         });
@@ -101,41 +126,23 @@ public static class Downloader
         return progressBlock;
     }
 
-    public static async Task<bool> DownloadAndVerifyPartAsync(HttpClient httpClient, string fileName, string savePath, FileMetadata metadata, int partNum, string serverUrl)
+    // Downloads a part and returns the raw data, or null if failed
+    public static async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, int partNum, string serverUrl)
     {
-         var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
+        var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
         var partResp = await httpClient.GetAsync(partUrl);
         if (!partResp.IsSuccessStatusCode)
         {
             Console.WriteLine($"Failed to download part {partNum}: {partResp.StatusCode}");
-            return false;
+            return null;
         }
         var partJson = await partResp.Content.ReadAsStringAsync();
         var partInfo = JsonSerializer.Deserialize<FilePartInfo>(partJson);
         if (partInfo == null)
         {
             Console.WriteLine($"Failed to parse part {partNum} info.");
-            return false;
+            return null;
         }
-        var partData = Convert.FromBase64String(partInfo.partData);
-        using (var fs = new FileStream(savePath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
-        {
-            fs.Seek((long)partNum * metadata.ChunkSize, SeekOrigin.Begin);
-            fs.Write(partData, 0, partData.Length);
-        }
-        using (var fs = new FileStream(savePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-        {
-            fs.Seek((long)partNum * metadata.ChunkSize, SeekOrigin.Begin);
-            var buffer = new byte[partData.Length];
-            int read = await fs.ReadAsync(buffer, 0, buffer.Length);
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(buffer, 0, read);
-            var hashHex = Convert.ToHexString(hash);
-            if (hashHex != partInfo.partHash)
-            {
-                return false;
-            }
-        }
-        return true;
+        return Convert.FromBase64String(partInfo.partData);
     }
 }

@@ -8,6 +8,10 @@
   <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\direct-file-transfer.shared\direct-file-transfer.shared.csproj" />
+  </ItemGroup>
+
     <ItemGroup>
       <None Update="appsettings.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

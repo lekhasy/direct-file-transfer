@@ -44,20 +44,8 @@ class Program
         string saveFolder = config?.DefaultSavingFolder ?? AppDomain.CurrentDomain.BaseDirectory;
         string savePath = Path.Combine(saveFolder, fileName);
 
-        // Step 3: Request file metadata from server
-        var metadata = await Downloader.GetFileMetadataAsync(fileName, config!.ServerUrl);
-        if (metadata == null)
-        {
-            Console.WriteLine("Failed to get or parse metadata.");
-            return;
-        }
-        Console.WriteLine($"Parsed metadata: {metadata.FileName}, {metadata.FileSize}, {metadata.PartCount}");
-
-        // Step 4: Create file with correct size
-        Downloader.CreateEmptyFile(savePath, metadata.FileSize);
-
         // Step 5: Download all parts concurrently and display progress using BufferBlock and ActionBlock
-        var progressBlock = Downloader.DownloadAllPartsAsync(fileName, savePath, metadata, connections, config.ServerUrl);
+        var progressBlock = await Downloader.DownloadAllPartsAsync(fileName, savePath, connections, config.ServerUrl);
         List<int> failedParts = new List<int>();
         var displayBlock = new ActionBlock<Downloader.DownloadProgress>(progress =>
         {

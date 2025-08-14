@@ -7,13 +7,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "direct-file-transfer", "dir
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "direct-file-transfer-client", "direct-file-transfer-client\direct-file-transfer-client.csproj", "{27BDF68A-B6C1-4965-87AA-3518D46B5729}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "direct-file-transfer.shared", "direct-file-transfer.shared\direct-file-transfer.shared.csproj", "{6CD8D2D1-471B-407E-A1C1-990A95D5262C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{AE59060B-62D1-4C6C-B796-D7588F020578}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -24,5 +23,15 @@ Global
 		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{27BDF68A-B6C1-4965-87AA-3518D46B5729}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6CD8D2D1-471B-407E-A1C1-990A95D5262C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6CD8D2D1-471B-407E-A1C1-990A95D5262C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6CD8D2D1-471B-407E-A1C1-990A95D5262C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6CD8D2D1-471B-407E-A1C1-990A95D5262C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4C69A966-50BB-470C-9202-7A3D401387BA}
 	EndGlobalSection
 EndGlobal
