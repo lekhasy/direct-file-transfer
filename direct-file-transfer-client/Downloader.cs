@@ -5,12 +5,21 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Dataflow;
 
 public static class Downloader
 {
+    public class DownloadProgress
+    {
+        public int TotalParts { get; set; }
+        public int CompletedParts { get; set; }
+        public double Percentage => TotalParts == 0 ? 0 : (CompletedParts * 100.0 / TotalParts);
+        public List<int> FailedParts { get; set; } = new List<int>();
+    }
+
     public static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
     {
-        using var httpClient = new HttpClient();
+                using var httpClient = new HttpClient();
         var metadataResp = await httpClient.GetAsync($"{serverUrl}/Download/metadata?FileName={Uri.EscapeDataString(fileName)}");
         if (!metadataResp.IsSuccessStatusCode)
         {
@@ -30,53 +39,71 @@ public static class Downloader
         fs.SetLength(fileSize);
     }
 
-    public static async Task<List<int>> DownloadAllPartsAsync(string fileName, string savePath, FileMetadata metadata, int connections, string serverUrl)
+    public static ISourceBlock<DownloadProgress> DownloadAllPartsAsync(string fileName, string savePath, FileMetadata metadata, int connections, string serverUrl)
     {
-        var tasks = new Task[metadata.PartCount];
+        var progressBlock = new BroadcastBlock<DownloadProgress>(p => p);
         var errors = new List<int>();
-        var semaphore = new System.Threading.SemaphoreSlim(connections);
-        using var httpClient = new HttpClient();
+        int completed = 0;
+        var progress = new DownloadProgress { TotalParts = metadata.PartCount };
+        var httpClient = new HttpClient();
+
+        var options = new ExecutionDataflowBlockOptions
+        {
+            MaxDegreeOfParallelism = connections
+        };
+
+        var actionBlock = new ActionBlock<int>(async partNum =>
+        {
+            bool success = false;
+            int retries = 0;
+            while (!success && retries < 3)
+            {
+                success = await DownloadAndVerifyPartAsync(httpClient, fileName, savePath, metadata, partNum, serverUrl);
+                if (!success)
+                {
+                    Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
+                    retries++;
+                }
+            }
+            lock (progress)
+            {
+                if (success)
+                {
+                    completed++;
+                    progress.CompletedParts = completed;
+                }
+                else
+                {
+                    errors.Add(partNum);
+                    progress.FailedParts.Add(partNum);
+                }
+                progressBlock.Post(new DownloadProgress
+                {
+                    TotalParts = progress.TotalParts,
+                    CompletedParts = progress.CompletedParts,
+                    FailedParts = new List<int>(progress.FailedParts)
+                });
+            }
+        }, options);
 
         for (int i = 0; i < metadata.PartCount; i++)
         {
-            int partNum = i;
-            tasks[i] = Task.Run(async () =>
-            {
-                await semaphore.WaitAsync();
-                try
-                {
-                    bool success = false;
-                    int retries = 0;
-                    while (!success && retries < 3)
-                    {
-                        success = await DownloadAndVerifyPartAsync(httpClient, fileName, savePath, metadata, partNum, serverUrl);
-                        if (!success)
-                        {
-                            Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
-                            retries++;
-                        }
-                    }
-                    if (!success)
-                    {
-                        lock (errors)
-                        {
-                            errors.Add(partNum);
-                        }
-                    }
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            });
+            actionBlock.Post(i);
         }
-        await Task.WhenAll(tasks);
-        return errors;
+
+        Task.Run(async () =>
+        {
+            actionBlock.Complete();
+            await actionBlock.Completion;
+            progressBlock.Complete();
+        });
+
+        return progressBlock;
     }
 
     public static async Task<bool> DownloadAndVerifyPartAsync(HttpClient httpClient, string fileName, string savePath, FileMetadata metadata, int partNum, string serverUrl)
     {
-        var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
+         var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
         var partResp = await httpClient.GetAsync(partUrl);
         if (!partResp.IsSuccessStatusCode)
         {

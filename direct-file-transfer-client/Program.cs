@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks.Dataflow;
 
 class Program
 {
@@ -55,13 +56,24 @@ class Program
         // Step 4: Create file with correct size
         Downloader.CreateEmptyFile(savePath, metadata.FileSize);
 
-        // Step 5: Download all parts concurrently
-        var errors = await Downloader.DownloadAllPartsAsync(fileName, savePath, metadata, connections, config.ServerUrl);
-
-        // Step 6: Report result
-        if (errors.Count > 0)
+        // Step 5: Download all parts concurrently and display progress using BufferBlock and ActionBlock
+        var progressBlock = Downloader.DownloadAllPartsAsync(fileName, savePath, metadata, connections, config.ServerUrl);
+        List<int> failedParts = new List<int>();
+        var displayBlock = new ActionBlock<Downloader.DownloadProgress>(progress =>
         {
-            Console.WriteLine($"Failed to download parts: {string.Join(", ", errors)}");
+            Console.Write($"\rProgress: {progress.Percentage:F2}% ({progress.CompletedParts}/{progress.TotalParts})");
+            if (progress.FailedParts.Count > 0)
+            {
+                failedParts = progress.FailedParts;
+            }
+        });
+        progressBlock.LinkTo(displayBlock, new DataflowLinkOptions { PropagateCompletion = true });
+        await displayBlock.Completion;
+        Console.WriteLine();
+        // Step 6: Report result
+        if (failedParts.Count > 0)
+        {
+            Console.WriteLine($"Failed to download parts: {string.Join(", ", failedParts)}");
         }
         else
         {
