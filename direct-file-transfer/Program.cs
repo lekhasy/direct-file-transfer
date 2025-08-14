@@ -39,10 +39,10 @@ var config = app.Services.GetRequiredService<AppConfig>();
 app.Urls.Add($"http://0.0.0.0:{config.ServerPort}");
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+//if (app.Environment.IsDevelopment())
+//{
+//    app.MapOpenApi();
+//}
 
 // app.UseHttpsRedirection();
 

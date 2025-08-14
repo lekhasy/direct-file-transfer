@@ -10,14 +10,14 @@ public class DownloadController : ControllerBase
     //private readonly FileIndexCache _fileIndexCache;
     private readonly AppConfig _config;
 
-        public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger, Microsoft.Extensions.Options.IOptions<AppConfig> configOptions)
-        {
-            _fileHasher = fileHasher;
-            _logger = logger;
-            _config = configOptions.Value;
-            _fileDirectory = _config.FileDirectory ?? Directory.GetCurrentDirectory();
-            //_fileIndexCache = fileIndexCache;
-        }
+    public DownloadController(FileHasher fileHasher, ILogger<DownloadController> logger, AppConfig configOptions)
+    {
+        _fileHasher = fileHasher;
+        _logger = logger;
+        _config = configOptions;
+        _fileDirectory = _config.FileDirectory ?? Directory.GetCurrentDirectory();
+        //_fileIndexCache = fileIndexCache;
+    }
 
     [HttpGet]
     public IActionResult Download([FromQuery] string FileName, [FromQuery] int partnumber)
@@ -32,7 +32,7 @@ public class DownloadController : ControllerBase
         var filePath = Path.Combine(_fileDirectory, FileName);
         if (!System.IO.File.Exists(filePath))
         {
-            _logger.LogWarning("File not found: {FileName}", FileName);
+            _logger.LogWarning($"File not found: {filePath}");
             return NotFound($"File {FileName} not found.");
         }
 
