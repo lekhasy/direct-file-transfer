@@ -45,7 +45,7 @@ class Program
         string savePath = Path.Combine(saveFolder, fileName);
 
         // Step 5: Download all parts concurrently and display progress using BufferBlock and ActionBlock
-        var progressBlock = await Downloader.DownloadAllPartsAsync(fileName, savePath, connections, config.ServerUrl);
+        var progressBlock = await Downloader.DownloadAllPartsAsync(fileName, savePath, connections, config!.ServerUrl);
         List<int> failedParts = new List<int>();
         var displayBlock = new ActionBlock<Downloader.DownloadProgress>(progress =>
         {

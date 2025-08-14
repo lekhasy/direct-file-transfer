@@ -48,8 +48,8 @@ public static class Downloader
         var httpClient = new HttpClient();
 
         // Use FileStatusManager to check missing blocks
-        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savePath, metadata.ChunkSize);
-        var missingBlocks = fileStatusManager.GetMissingBlocks(metadata.PartHashes);
+        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savePath, metadata);
+        var missingBlocks = fileStatusManager.GetMissingBlocks();
 
         progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
 
