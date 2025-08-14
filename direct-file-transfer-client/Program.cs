@@ -26,27 +26,25 @@ class Program
 
         // Step 2: Read server URL from appsettings.json
         string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
-        string serverUrl = "http://localhost:5027";
-        if (File.Exists(configPath))
+
+        if (!File.Exists(configPath))
         {
-            var configJson = File.ReadAllText(configPath);
-            var config = JsonSerializer.Deserialize<ClientConfig>(configJson);
-            if (config != null && !string.IsNullOrWhiteSpace(config.ServerUrl))
-            {
-                serverUrl = config.ServerUrl;
-            }
-            else
-            {
-                throw new InvalidOperationException("Invalid or missing ServerUrl in appsettings.json");
-            }
-        }
-        else
-        {
-            Console.WriteLine("appsettings.json not found, using default server URL.");
+            throw new Exception("appsettings.json not found. Please create it with the required configuration.");
         }
 
+        var configJson = File.ReadAllText(configPath);
+        var config = JsonSerializer.Deserialize<ClientConfig>(configJson);
+
+        if(config == null)
+        {
+            throw new Exception("Invalid or missing configuration in appsettings.json. Ensure ServerUrl is set.");
+        }
+
+        string saveFolder = config?.DefaultSavingFolder ?? AppDomain.CurrentDomain.BaseDirectory;
+        string savePath = Path.Combine(saveFolder, fileName);
+
         // Step 3: Request file metadata from server
-        var metadata = await Downloader.GetFileMetadataAsync(fileName, serverUrl);
+        var metadata = await Downloader.GetFileMetadataAsync(fileName, config!.ServerUrl);
         if (metadata == null)
         {
             Console.WriteLine("Failed to get or parse metadata.");
@@ -55,10 +53,10 @@ class Program
         Console.WriteLine($"Parsed metadata: {metadata.FileName}, {metadata.FileSize}, {metadata.PartCount}");
 
         // Step 4: Create file with correct size
-        Downloader.CreateEmptyFile(fileName, metadata.FileSize);
+        Downloader.CreateEmptyFile(savePath, metadata.FileSize);
 
         // Step 5: Download all parts concurrently
-        var errors = await Downloader.DownloadAllPartsAsync(fileName, metadata, connections, serverUrl);
+        var errors = await Downloader.DownloadAllPartsAsync(fileName, savePath, metadata, connections, config.ServerUrl);
 
         // Step 6: Report result
         if (errors.Count > 0)
@@ -73,6 +71,7 @@ class Program
 
     public class ClientConfig
     {
-        public string ServerUrl { get; set; }
+        public required string ServerUrl { get; set; }
+        public required string DefaultSavingFolder { get; set; }
     }
 }

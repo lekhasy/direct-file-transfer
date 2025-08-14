@@ -30,7 +30,7 @@ public static class Downloader
         fs.SetLength(fileSize);
     }
 
-    public static async Task<List<int>> DownloadAllPartsAsync(string fileName, FileMetadata metadata, int connections, string serverUrl)
+    public static async Task<List<int>> DownloadAllPartsAsync(string fileName, string savePath, FileMetadata metadata, int connections, string serverUrl)
     {
         var tasks = new Task[metadata.PartCount];
         var errors = new List<int>();
@@ -49,7 +49,7 @@ public static class Downloader
                     int retries = 0;
                     while (!success && retries < 3)
                     {
-                        success = await DownloadAndVerifyPartAsync(httpClient, fileName, metadata, partNum, serverUrl);
+                        success = await DownloadAndVerifyPartAsync(httpClient, fileName, savePath, metadata, partNum, serverUrl);
                         if (!success)
                         {
                             Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
@@ -74,7 +74,7 @@ public static class Downloader
         return errors;
     }
 
-    public static async Task<bool> DownloadAndVerifyPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, int partNum, string serverUrl)
+    public static async Task<bool> DownloadAndVerifyPartAsync(HttpClient httpClient, string fileName, string savePath, FileMetadata metadata, int partNum, string serverUrl)
     {
         var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
         var partResp = await httpClient.GetAsync(partUrl);
@@ -91,12 +91,12 @@ public static class Downloader
             return false;
         }
         var partData = Convert.FromBase64String(partInfo.partData);
-        using (var fs = new FileStream(fileName, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+        using (var fs = new FileStream(savePath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
         {
             fs.Seek((long)partNum * metadata.ChunkSize, SeekOrigin.Begin);
             fs.Write(partData, 0, partData.Length);
         }
-        using (var fs = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (var fs = new FileStream(savePath, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             fs.Seek((long)partNum * metadata.ChunkSize, SeekOrigin.Begin);
             var buffer = new byte[partData.Length];
