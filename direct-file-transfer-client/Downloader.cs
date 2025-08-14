@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
@@ -16,6 +21,12 @@ public static class Downloader
         public int CompletedParts { get; set; }
         public double Percentage => TotalParts == 0 ? 0 : (CompletedParts * 100.0 / TotalParts);
         public List<int> FailedParts { get; set; } = new List<int>();
+    }
+
+    public class ProgressUpdate
+    {
+        public bool Success { get; set; }
+        public int PartNum { get; set; }
     }
 
     private static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
@@ -35,14 +46,13 @@ public static class Downloader
 
     public static async Task<ISourceBlock<DownloadProgress>> DownloadAllPartsAsync(string fileName, string savePath, int connections, string serverUrl)
     {
-        var metadata = await Downloader.GetFileMetadataAsync(fileName, serverUrl);
+        var metadata = await GetFileMetadataAsync(fileName, serverUrl);
         if (metadata == null)
         {
             throw new Exception("Failed to get or parse metadata.");
         }
         Console.WriteLine($"Parsed metadata: {metadata.FileName}, {metadata.FileSize}, {metadata.PartCount}");
 
-        var progressBlock = new BufferBlock<DownloadProgress>();
         var errors = new List<int>();
         var progress = new DownloadProgress { TotalParts = metadata.PartCount };
         var httpClient = new HttpClient();
@@ -53,12 +63,38 @@ public static class Downloader
 
         progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
 
-        progressBlock.Post(new DownloadProgress
+        var progressBlock = new TransformBlock<ProgressUpdate, DownloadProgress>(update =>
         {
-            TotalParts = progress.TotalParts,
-            CompletedParts = progress.CompletedParts,
-            FailedParts = [.. progress.FailedParts]
+            if (update.PartNum == -1)
+            {
+                // Initial progress update
+                return new DownloadProgress
+                {
+                    TotalParts = progress.TotalParts,
+                    CompletedParts = progress.CompletedParts,
+                    FailedParts = progress.FailedParts
+                };
+            }
+
+            if (update.Success)
+            {
+                progress.CompletedParts++;
+            }
+            else
+            {
+                errors.Add(update.PartNum);
+                progress.FailedParts.Add(update.PartNum);
+            }
+            return new DownloadProgress
+            {
+                TotalParts = progress.TotalParts,
+                CompletedParts = progress.CompletedParts,
+                FailedParts = progress.FailedParts
+            };
         });
+
+        // Post initial progress
+        progressBlock.Post(new ProgressUpdate { Success = true, PartNum = -1 });
 
         var options = new ExecutionDataflowBlockOptions
         {
@@ -89,25 +125,8 @@ public static class Downloader
                     retries++;
                 }
             }
-            lock (progress)
-            {
-                if (success)
-                {
-                    progress.CompletedParts++;
-                }
-                else
-                {
-                    errors.Add(partNum);
-                    progress.FailedParts.Add(partNum);
-                }
-
-                progressBlock.Post(new DownloadProgress
-                {
-                    TotalParts = progress.TotalParts,
-                    CompletedParts = progress.CompletedParts,
-                    FailedParts = [.. progress.FailedParts]
-                });
-            }
+            // Post progress update to progressBlock
+            await progressBlock.SendAsync(new ProgressUpdate { Success = success, PartNum = partNum });
         }, options);
 
         foreach (var partNum in missingBlocks)
