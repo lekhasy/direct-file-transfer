@@ -6,37 +6,55 @@ using direct_file_transfer.shared;
 
 namespace direct_file_transfer_client
 {
+    using System.Threading.Tasks.Dataflow;
+    using direct_file_transfer.shared.ValueTypes;
+
     public class FileStatusManager
     {
         private readonly string _filePath;
         private readonly FileMetadata _metadata;
+        private readonly ActionBlock<(PartIndex blockIndex, byte[] data)> _writeBlock;
+        private readonly BufferBlock<(PartIndex blockIndex, byte[] data)> _writeBuffer = new BufferBlock<(PartIndex blockIndex, byte[] data)>();
 
         public FileStatusManager(string filePath, FileMetadata metadata)
         {
             _filePath = filePath;
             _metadata = metadata;
+            _writeBlock = new ActionBlock<(PartIndex blockIndex, byte[] data)>(item =>
+            {
+
+                Console.WriteLine($"Writing block {item.blockIndex.Value} to file {_filePath} at position {item.blockIndex.Value * _metadata.ChunkSize}");
+                using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Write))
+                {
+                    //Console.WriteLine($"Seeking to position {item.blockIndex.Value * _metadata.ChunkSize} in file {_filePath}");
+                    PartOffset offset = new PartOffset(item.blockIndex, new PartSize(_metadata.ChunkSize));
+                    stream.Seek(offset.Value, SeekOrigin.Begin);
+                    stream.Write(item.data, 0, item.data.Length);
+                }
+            }, new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            _writeBuffer.LinkTo(_writeBlock, new DataflowLinkOptions { PropagateCompletion = true });
         }
 
         // Returns a list of block indices that are missing (hash does not match expected)
-        public List<int> GetMissingBlocks()
+        public List<PartIndex> GetMissingBlocks()
         {
             var fileAlreadyExist = EnsureFileExists();
 
             if (!fileAlreadyExist)
             {
-                return _metadata.PartHashes.Select((hash, index) => index).ToList();
+                return _metadata.PartHashes.Select((hash, index) => new PartIndex(index)).ToList();
             }
 
-            var missingBlocks = new List<int>();
+            var missingBlocks = new List<PartIndex>();
 
             using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read))
             {
                 for (int i = 0; i < _metadata.PartHashes.Count; i++)
                 {
-                    var hash = GetBlockHash(stream, i);
+                    var hash = GetBlockHash(stream, new PartIndex(i));
                     if (hash != _metadata.PartHashes[i])
                     {
-                        missingBlocks.Add(i);
+                        missingBlocks.Add(new PartIndex(i));
                     }
                 }
             }
@@ -65,28 +83,33 @@ namespace direct_file_transfer_client
         }
 
         // Returns the hash of a block at the given index
-        private string GetBlockHash(FileStream stream, int blockIndex)
+        public string GetBlockHash(FileStream stream, PartIndex blockIndex)
         {
-            long offset = blockIndex * _metadata.ChunkSize;
-            if (offset >= stream.Length)
+            PartOffset offset = new PartOffset(blockIndex, new PartSize(_metadata.ChunkSize));
+            if (offset.Value >= stream.Length)
                 return string.Empty;
 
-            stream.Seek(offset, SeekOrigin.Begin);
-            int bytesToRead = (int)Math.Min(_metadata.ChunkSize, stream.Length - offset);
+            stream.Seek(offset.Value, SeekOrigin.Begin);
+            long bytesToRead = Math.Min(_metadata.ChunkSize, stream.Length - offset.Value);
             byte[] buffer = new byte[bytesToRead];
-            stream.ReadExactly(buffer, 0, bytesToRead);
-            return FileTransferDataHasher.GetBlockHash(buffer);
+            stream.ReadExactly(buffer, 0, (int)bytesToRead);
+            return Hasher.GetHash(buffer);
         }
 
         // Writes a block to disk at the given index
-        public void WriteBlock(int blockIndex, byte[] data)
+        public void WriteBlock(PartIndex blockIndex, byte[] data)
         {
-            using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Write))
-            {
-                long offset = blockIndex * _metadata.ChunkSize;
-                stream.Seek(offset, SeekOrigin.Begin);
-                stream.Write(data, 0, data.Length);
-            }
+            //Console.WriteLine($"Queueing block {blockIndex.Value} for writing to file {_filePath}");
+            _writeBuffer.Post((blockIndex, data));
+        }
+
+        public void FinishWrite()
+        {
+            Console.WriteLine("Finishing write operations...");
+            _writeBuffer?.Complete();
+            _writeBuffer?.Completion.Wait();
+            _writeBlock?.Complete();
+            _writeBlock?.Completion.Wait();
         }
     }
 }

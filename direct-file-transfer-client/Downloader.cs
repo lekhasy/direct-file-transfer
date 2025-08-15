@@ -12,6 +12,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using direct_file_transfer.shared;
+using direct_file_transfer.shared.ValueTypes;
 
 public static class Downloader
 {
@@ -26,7 +27,7 @@ public static class Downloader
     public class ProgressUpdate
     {
         public bool Success { get; set; }
-        public int PartNum { get; set; }
+        public PartIndex? PartNum { get; set; }
     }
 
     private static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
@@ -39,7 +40,6 @@ public static class Downloader
             return null;
         }
         var metadataJson = await metadataResp.Content.ReadAsStringAsync();
-        Console.WriteLine($"Received metadata: {metadataJson}");
         var metadata = JsonSerializer.Deserialize<FileMetadata>(metadataJson);
         return metadata;
     }
@@ -63,9 +63,11 @@ public static class Downloader
 
         progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
 
+        Console.WriteLine($"Completed parts: {progress.CompletedParts}");
+
         var progressBlock = new TransformBlock<ProgressUpdate, DownloadProgress>(update =>
         {
-            if (update.PartNum == -1)
+            if (update.PartNum is null)
             {
                 // Initial progress update
                 return new DownloadProgress
@@ -82,8 +84,8 @@ public static class Downloader
             }
             else
             {
-                errors.Add(update.PartNum);
-                progress.FailedParts.Add(update.PartNum);
+                errors.Add(update.PartNum.Value);
+                progress.FailedParts.Add(update.PartNum.Value);
             }
             return new DownloadProgress
             {
@@ -94,39 +96,55 @@ public static class Downloader
         });
 
         // Post initial progress
-        progressBlock.Post(new ProgressUpdate { Success = true, PartNum = -1 });
+        progressBlock.Post(new ProgressUpdate { Success = true, PartNum = null });
 
         var options = new ExecutionDataflowBlockOptions
         {
             MaxDegreeOfParallelism = connections
         };
 
-        var actionBlock = new ActionBlock<int>(async partNum =>
+        var actionBlock = new ActionBlock<PartIndex>(async partNum =>
         {
+
             bool success = false;
             int retries = 0;
             while (!success && retries < 3)
             {
-                var partData = await DownloadPartAsync(httpClient, fileName, metadata, partNum, serverUrl);
-                if (partData != null)
+                try
                 {
-                    // Write block using FileStatusManager
-                    fileStatusManager.WriteBlock(partNum, partData);
-                    // Verify hash
-                    var hash = FileTransferDataHasher.GetBlockHash(partData);
-                    if (hash == metadata.PartHashes[partNum])
+                    var partData = await DownloadPartAsync(httpClient, fileName, metadata, partNum, serverUrl);
+                    if (partData != null)
                     {
-                        success = true;
+                        // Write block using FileStatusManager
+                        fileStatusManager.WriteBlock(partNum, partData);
+                        
+                        // Verify hash
+                        var hash = Hasher.GetHash(partData);
+                        if (hash == metadata.PartHashes[partNum.Value])
+                        {
+                            success = true;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Failed to download part {partNum}, retrying...");
+                    }
+
+                    if (!success)
+                    {
+                        Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
+                        retries++;
                     }
                 }
-                if (!success)
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"Hash mismatch or download error for part {partNum}, retrying...");
-                    retries++;
+                    Console.WriteLine($"Exception in ActionBlock for part {partNum}: {ex}");
+                    await progressBlock.SendAsync(new ProgressUpdate { Success = false, PartNum = partNum });
                 }
             }
             // Post progress update to progressBlock
             await progressBlock.SendAsync(new ProgressUpdate { Success = success, PartNum = partNum });
+
         }, options);
 
         foreach (var partNum in missingBlocks)
@@ -137,18 +155,20 @@ public static class Downloader
         actionBlock.Complete();
 
         // Complete progressBlock after all downloads are done
-        _ = Task.Run(async () => {
+        _ = Task.Run(async () =>
+        {
             await actionBlock.Completion;
             progressBlock.Complete();
+            fileStatusManager.FinishWrite();
         });
 
         return progressBlock;
     }
 
     // Downloads a part and returns the raw data, or null if failed
-    public static async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, int partNum, string serverUrl)
+    public static async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, PartIndex partNum, string serverUrl)
     {
-        var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum}";
+        var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum.Value}";
         var partResp = await httpClient.GetAsync(partUrl);
         if (!partResp.IsSuccessStatusCode)
         {

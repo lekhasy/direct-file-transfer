@@ -33,10 +33,10 @@ public class FileHasher
         return hashes;
     }
 
-    public byte[] ReadFilePart(string filePath, int partNumber)
+    public byte[] ReadFilePart(string filePath, long partNumber)
     {
         using var stream = File.OpenRead(filePath);
-        stream.Seek((long)partNumber * ChunkSize, SeekOrigin.Begin);
+        stream.Seek(partNumber * ChunkSize, SeekOrigin.Begin);
         var buffer = new byte[ChunkSize];
         int bytesRead = stream.Read(buffer, 0, ChunkSize);
         if (bytesRead < ChunkSize)
