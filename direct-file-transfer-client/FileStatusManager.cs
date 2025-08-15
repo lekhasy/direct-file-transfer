@@ -23,10 +23,8 @@ namespace direct_file_transfer_client
             _writeBlock = new ActionBlock<(PartIndex blockIndex, byte[] data)>(item =>
             {
 
-                Console.WriteLine($"Writing block {item.blockIndex.Value} to file {_filePath} at position {item.blockIndex.Value * _metadata.ChunkSize}");
                 using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Write))
                 {
-                    //Console.WriteLine($"Seeking to position {item.blockIndex.Value * _metadata.ChunkSize} in file {_filePath}");
                     PartOffset offset = new PartOffset(item.blockIndex, new PartSize(_metadata.ChunkSize));
                     stream.Seek(offset.Value, SeekOrigin.Begin);
                     stream.Write(item.data, 0, item.data.Length);
@@ -99,13 +97,11 @@ namespace direct_file_transfer_client
         // Writes a block to disk at the given index
         public void WriteBlock(PartIndex blockIndex, byte[] data)
         {
-            //Console.WriteLine($"Queueing block {blockIndex.Value} for writing to file {_filePath}");
             _writeBuffer.Post((blockIndex, data));
         }
 
         public void FinishWrite()
         {
-            Console.WriteLine("Finishing write operations...");
             _writeBuffer?.Complete();
             _writeBuffer?.Completion.Wait();
             _writeBlock?.Complete();

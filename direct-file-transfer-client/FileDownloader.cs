@@ -7,22 +7,49 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using direct_file_transfer.shared;
 using direct_file_transfer.shared.ValueTypes;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Diagnostics;
 
-public static class Downloader
+public class FileDownloader
 {
-    public class DownloadProgress
+
+    public class DownloadProgress : IDownloadProgress
     {
         public int TotalParts { get; set; }
         public int CompletedParts { get; set; }
+        public List<PartIndex> FailedParts { get; set; } = new List<PartIndex>();
         public double Percentage => TotalParts == 0 ? 0 : (CompletedParts * 100.0 / TotalParts);
-        public List<int> FailedParts { get; set; } = new List<int>();
+
+        public void UpdateProgress(ProgressUpdate update)
+        {
+            if (update.Success)
+            {
+                CompletedParts++;
+            }
+            else
+            {
+                FailedParts.Add(update.PartNum!);
+            }
+
+            ProgressUpdated?.Invoke(this);
+        }
+
+        public void ResetProgress()
+        {
+            TotalParts = 0;
+            CompletedParts = 0;
+            FailedParts.Clear();
+        }
+
+        public event Action<DownloadProgress>? ProgressUpdated;
     }
+
+
 
     public class ProgressUpdate
     {
@@ -30,7 +57,12 @@ public static class Downloader
         public PartIndex? PartNum { get; set; }
     }
 
-    private static async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
+    public IDownloadProgress Progress { get; private set; } = new DownloadProgress()
+    {
+        TotalParts = 0
+    };
+
+    private async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
     {
         using var httpClient = new HttpClient();
         var metadataResp = await httpClient.GetAsync($"{serverUrl}/Download/metadata?FileName={Uri.EscapeDataString(fileName)}");
@@ -44,7 +76,7 @@ public static class Downloader
         return metadata;
     }
 
-    public static async Task<ISourceBlock<DownloadProgress>> DownloadAllPartsAsync(string fileName, string savePath, int connections, string serverUrl)
+    public async Task DownloadAllPartsAsync(string fileName, string savePath, int connections, string serverUrl)
     {
         var metadata = await GetFileMetadataAsync(fileName, serverUrl);
         if (metadata == null)
@@ -53,50 +85,17 @@ public static class Downloader
         }
         Console.WriteLine($"Parsed metadata: {metadata.FileName}, {metadata.FileSize}, {metadata.PartCount}");
 
-        var errors = new List<int>();
-        var progress = new DownloadProgress { TotalParts = metadata.PartCount };
+        ((DownloadProgress)Progress).ResetProgress();
+        Progress.TotalParts = metadata.PartCount;
         var httpClient = new HttpClient();
 
         // Use FileStatusManager to check missing blocks
         var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savePath, metadata);
         var missingBlocks = fileStatusManager.GetMissingBlocks();
 
-        progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
+        Progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
 
-        Console.WriteLine($"Completed parts: {progress.CompletedParts}");
-
-        var progressBlock = new TransformBlock<ProgressUpdate, DownloadProgress>(update =>
-        {
-            if (update.PartNum is null)
-            {
-                // Initial progress update
-                return new DownloadProgress
-                {
-                    TotalParts = progress.TotalParts,
-                    CompletedParts = progress.CompletedParts,
-                    FailedParts = progress.FailedParts
-                };
-            }
-
-            if (update.Success)
-            {
-                progress.CompletedParts++;
-            }
-            else
-            {
-                errors.Add(update.PartNum.Value);
-                progress.FailedParts.Add(update.PartNum.Value);
-            }
-            return new DownloadProgress
-            {
-                TotalParts = progress.TotalParts,
-                CompletedParts = progress.CompletedParts,
-                FailedParts = progress.FailedParts
-            };
-        });
-
-        // Post initial progress
-        progressBlock.Post(new ProgressUpdate { Success = true, PartNum = null });
+        Console.WriteLine($"Completed parts: {Progress.CompletedParts}");
 
         var options = new ExecutionDataflowBlockOptions
         {
@@ -117,7 +116,7 @@ public static class Downloader
                     {
                         // Write block using FileStatusManager
                         fileStatusManager.WriteBlock(partNum, partData);
-                        
+
                         // Verify hash
                         var hash = Hasher.GetHash(partData);
                         if (hash == metadata.PartHashes[partNum.Value])
@@ -139,12 +138,11 @@ public static class Downloader
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Exception in ActionBlock for part {partNum}: {ex}");
-                    await progressBlock.SendAsync(new ProgressUpdate { Success = false, PartNum = partNum });
+                    ((DownloadProgress)Progress).UpdateProgress(new ProgressUpdate { Success = false, PartNum = partNum });
                 }
             }
             // Post progress update to progressBlock
-            await progressBlock.SendAsync(new ProgressUpdate { Success = success, PartNum = partNum });
-
+            ((DownloadProgress)Progress).UpdateProgress(new ProgressUpdate { Success = true, PartNum = partNum });
         }, options);
 
         foreach (var partNum in missingBlocks)
@@ -155,18 +153,12 @@ public static class Downloader
         actionBlock.Complete();
 
         // Complete progressBlock after all downloads are done
-        _ = Task.Run(async () =>
-        {
-            await actionBlock.Completion;
-            progressBlock.Complete();
-            fileStatusManager.FinishWrite();
-        });
-
-        return progressBlock;
+        await actionBlock.Completion;
+        fileStatusManager.FinishWrite();
     }
 
     // Downloads a part and returns the raw data, or null if failed
-    public static async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, PartIndex partNum, string serverUrl)
+    public async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, PartIndex partNum, string serverUrl)
     {
         var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum.Value}";
         var partResp = await httpClient.GetAsync(partUrl);

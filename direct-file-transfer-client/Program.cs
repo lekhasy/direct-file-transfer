@@ -44,20 +44,19 @@ class Program
         string saveFolder = config?.DefaultSavingFolder ?? AppDomain.CurrentDomain.BaseDirectory;
         string savePath = Path.Combine(saveFolder, fileName);
 
-        // Step 5: Download all parts concurrently and display progress using BufferBlock and ActionBlock
-        var progressBlock = await Downloader.DownloadAllPartsAsync(fileName, savePath, connections, config!.ServerUrl);
+        var downloader = new FileDownloader();
+
         List<int> failedParts = new List<int>();
-        var displayBlock = new ActionBlock<Downloader.DownloadProgress>(progress =>
+
+        downloader.Progress.ProgressUpdated += (progress) =>
         {
             Console.Write($"\rProgress: {progress.Percentage:F2}% ({progress.CompletedParts}/{progress.TotalParts})");
-            if (progress.FailedParts.Count > 0)
-            {
-                failedParts = progress.FailedParts;
-            }
-        });
-        progressBlock.LinkTo(displayBlock, new DataflowLinkOptions { PropagateCompletion = true });
-        await displayBlock.Completion;
+        };
+
+        // Step 5: Download all parts concurrently and display progress using BufferBlock and ActionBlock
+        await downloader.DownloadAllPartsAsync(fileName, savePath, connections, config!.ServerUrl);
         Console.WriteLine();
+
         // Step 6: Report result
         if (failedParts.Count > 0)
         {
