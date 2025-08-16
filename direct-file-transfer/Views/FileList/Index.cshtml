@@ -1,0 +1,11 @@
+@model List<string>
+@{
+    ViewData["Title"] = "File List";
+}
+<h2>Files in Serving Directory</h2>
+<ul>
+@foreach (var file in Model)
+{
+    <li>@file</li>
+}
+</ul>

@@ -14,7 +14,7 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddControllers();
+builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<FileHasher>();
 
 // Build AppConfig manually from configuration
@@ -47,6 +47,9 @@ app.Urls.Add($"http://0.0.0.0:{config.ServerPort}");
 // app.UseHttpsRedirection();
 
 app.MapControllers();
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=FileList}/{action=Index}/{id?}");
 
 app.Run();
 
