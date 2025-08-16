@@ -102,6 +102,7 @@ public class DownloadController : ControllerBase
         return Ok(new
         {
             FileName,
+            FileRelativePath = Path.GetRelativePath(_fileDirectory, filePath),
             FileSize = fileInfo.Length,
             PartCount = hashTable.Count,
             PartHashes = hashTable,

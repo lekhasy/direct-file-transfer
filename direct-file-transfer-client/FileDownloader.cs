@@ -14,9 +14,17 @@ using direct_file_transfer.shared;
 using direct_file_transfer.shared.ValueTypes;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.Diagnostics;
+using direct_file_transfer_client;
 
 public class FileDownloader
 {
+
+    private readonly ClientConfig _config;
+
+    public FileDownloader(ClientConfig config)
+    {
+        _config = config;
+    }
 
     public class DownloadProgress : IDownloadProgress
     {
@@ -62,10 +70,10 @@ public class FileDownloader
         TotalParts = 0
     };
 
-    private async Task<FileMetadata?> GetFileMetadataAsync(string fileName, string serverUrl)
+    private async Task<FileMetadata?> GetFileMetadataAsync(string fileName)
     {
         using var httpClient = new HttpClient();
-        var metadataResp = await httpClient.GetAsync($"{serverUrl}/Download/metadata?FileName={Uri.EscapeDataString(fileName)}");
+        var metadataResp = await httpClient.GetAsync($"{_config.ServerUrl}/Download/metadata?FileName={Uri.EscapeDataString(fileName)}");
         if (!metadataResp.IsSuccessStatusCode)
         {
             Console.WriteLine($"Failed to get metadata: {metadataResp.StatusCode}");
@@ -76,9 +84,9 @@ public class FileDownloader
         return metadata;
     }
 
-    public async Task DownloadAllPartsAsync(string fileName, string savePath, int connections, string serverUrl)
+    public async Task DownloadAllPartsAsync(string relativeFilePath, string savingDirectory, int connections)
     {
-        var metadata = await GetFileMetadataAsync(fileName, serverUrl);
+        var metadata = await GetFileMetadataAsync(relativeFilePath);
         if (metadata == null)
         {
             throw new Exception("Failed to get or parse metadata.");
@@ -90,7 +98,7 @@ public class FileDownloader
         var httpClient = new HttpClient();
 
         // Use FileStatusManager to check missing blocks
-        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savePath, metadata);
+        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savingDirectory, metadata);
         var missingBlocks = fileStatusManager.GetMissingBlocks();
 
         Progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
@@ -104,14 +112,13 @@ public class FileDownloader
 
         var actionBlock = new ActionBlock<PartIndex>(async partNum =>
         {
-
             bool success = false;
             int retries = 0;
             while (!success && retries < 3)
             {
                 try
                 {
-                    var partData = await DownloadPartAsync(httpClient, fileName, metadata, partNum, serverUrl);
+                    var partData = await DownloadPartAsync(httpClient, metadata, partNum);
                     if (partData != null)
                     {
                         // Write block using FileStatusManager
@@ -158,9 +165,9 @@ public class FileDownloader
     }
 
     // Downloads a part and returns the raw data, or null if failed
-    public async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, string fileName, FileMetadata metadata, PartIndex partNum, string serverUrl)
+    public async Task<byte[]?> DownloadPartAsync(HttpClient httpClient, FileMetadata metadata, PartIndex partNum)
     {
-        var partUrl = $"{serverUrl}/Download?FileName={Uri.EscapeDataString(fileName)}&partnumber={partNum.Value}";
+        var partUrl = $"{_config.ServerUrl}/Download?FileName={Uri.EscapeDataString(metadata.FileRelativePath)}&partnumber={partNum.Value}";
         var partResp = await httpClient.GetAsync(partUrl);
         if (!partResp.IsSuccessStatusCode)
         {
