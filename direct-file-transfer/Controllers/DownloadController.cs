@@ -81,7 +81,7 @@ public class DownloadController : ControllerBase
         var filePath = Path.Combine(_fileDirectory, FileName);
         if (!System.IO.File.Exists(filePath))
         {
-            _logger.LogWarning("File not found: {FileName}", FileName);
+            _logger.LogWarning("File not found: {FileName}", filePath);
             return NotFound($"File {FileName} not found.");
         }
 
