@@ -3,26 +3,28 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using direct_file_transfer.shared;
+using direct_file_transfer_client;
+using System.Threading.Tasks.Dataflow;
+using direct_file_transfer.shared.ValueTypes;
 
 namespace direct_file_transfer_client
 {
-    using System.Threading.Tasks.Dataflow;
-    using direct_file_transfer.shared.ValueTypes;
-
     public class FileStatusManager
     {
+        private readonly ClientConfig _config;
         private readonly string _filePath;
         private readonly FileMetadata _metadata;
         private readonly ActionBlock<(PartIndex blockIndex, byte[] data)> _writeBlock;
         private readonly BufferBlock<(PartIndex blockIndex, byte[] data)> _writeBuffer = new BufferBlock<(PartIndex blockIndex, byte[] data)>();
 
-        public FileStatusManager(string filePath, FileMetadata metadata)
+        public FileStatusManager(ClientConfig config, FileMetadata metadata)
         {
-            _filePath = filePath;
+            _config = config;
             _metadata = metadata;
+            _filePath = Path.Combine(config.DefaultSavingFolder, metadata.FileRelativePath);
             _writeBlock = new ActionBlock<(PartIndex blockIndex, byte[] data)>(item =>
             {
-
+                EnsureFileExists();
                 using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Write))
                 {
                     PartOffset offset = new PartOffset(item.blockIndex, new PartSize(_metadata.ChunkSize));
@@ -70,6 +72,13 @@ namespace direct_file_transfer_client
                     fileInfo.Delete();
                 }
 
+                var directoryPath = Path.GetDirectoryName(_filePath);
+                if (directoryPath == null)
+                {
+                    throw new InvalidOperationException("Directory path cannot be null.");
+                }
+
+                Directory.CreateDirectory(directoryPath);
                 using (var stream = new FileStream(_filePath, FileMode.Create, FileAccess.Write))
                 {
                     stream.SetLength(_metadata.FileSize);

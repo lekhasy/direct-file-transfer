@@ -10,9 +10,9 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
 {
     public class Settings : CommandSettings
     {
-        [CommandArgument(0, "<FileName>")]
-        [Description("Name of the file to download")]
-        public string FileName { get; set; } = string.Empty;
+        [CommandArgument(0, "<RelativeFilePath>")]
+        [Description("Relative path of the file to download")]
+        public string RelativeFilePath { get; set; } = string.Empty;
 
         [CommandOption("--connections|-c")]
         [Description("Number of parallel connections (default: 10)")]
@@ -32,11 +32,9 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
         }
         var services = new ServiceCollection();
         services.AddSingleton<ClientConfig>(config);
+        services.AddSingleton<FileStatusManagerFactory>();
         services.AddTransient<FileDownloader, FileDownloader>();
         var provider = services.BuildServiceProvider();
-
-        string saveFolder = config.DefaultSavingFolder ?? AppDomain.CurrentDomain.BaseDirectory;
-        string savePath = Path.Combine(saveFolder, settings.FileName);
 
         var downloader = provider.GetRequiredService<FileDownloader>();
 
@@ -45,7 +43,7 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             AnsiConsole.Markup($"\r[green]Progress: {progress.Percentage:F2}% ({progress.CompletedParts}/{progress.TotalParts})[/]");
         };
 
-        await downloader.DownloadAllPartsAsync(settings.FileName, savePath, settings.Connections);
+        await downloader.DownloadAllPartsAsync(settings.RelativeFilePath, settings.Connections);
         AnsiConsole.WriteLine("");
 
         if (downloader.Progress.FailedParts.Count > 0)

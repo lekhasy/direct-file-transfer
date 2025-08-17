@@ -16,15 +16,8 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.Diagnostics;
 using direct_file_transfer_client;
 
-public class FileDownloader
+public class FileDownloader(ClientConfig _config, FileStatusManagerFactory _fileStatusManagerFactory)
 {
-
-    private readonly ClientConfig _config;
-
-    public FileDownloader(ClientConfig config)
-    {
-        _config = config;
-    }
 
     public class DownloadProgress : IDownloadProgress
     {
@@ -84,7 +77,7 @@ public class FileDownloader
         return metadata;
     }
 
-    public async Task DownloadAllPartsAsync(string relativeFilePath, string savingDirectory, int connections)
+    public async Task DownloadAllPartsAsync(string relativeFilePath, int connections)
     {
         var metadata = await GetFileMetadataAsync(relativeFilePath);
         if (metadata == null)
@@ -98,7 +91,7 @@ public class FileDownloader
         var httpClient = new HttpClient();
 
         // Use FileStatusManager to check missing blocks
-        var fileStatusManager = new direct_file_transfer_client.FileStatusManager(savingDirectory, metadata);
+        var fileStatusManager = _fileStatusManagerFactory.Create(metadata);
         var missingBlocks = fileStatusManager.GetMissingBlocks();
 
         Progress.CompletedParts = metadata.PartCount - missingBlocks.Count;
